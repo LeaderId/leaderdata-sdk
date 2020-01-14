@@ -77,6 +77,7 @@ class Client:
         method: str,
         spec: dict,
         body: Any = None,
+        *,
         is_auth: bool = False,
         try_auth: bool = True,
         **kwargs,
