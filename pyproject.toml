@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "leaderdata-sdk"
+version = "0.1.0"
+description = "LeaderData API Wrapper"
+authors = ["shagohead <html.ru@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+httpx = "^0.11.0"
+
+[tool.poetry.dev-dependencies]
+jedi = "^0.15.2"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
