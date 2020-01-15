@@ -1,7 +1,11 @@
 import httpx
 
 
-class ResponseError(Exception):
+class LeaderDataError(Exception):
+    """Исключение модуля LeaderData API SDK"""
+
+
+class ResponseError(LeaderDataError):
     """API вернула ошибку"""
 
     resp: httpx.Response
@@ -40,7 +44,7 @@ class APIServerError(ResponseError):
     """API вернула ошибку 5XX"""
 
 
-class MissingRequiredParam(Exception):
+class MissingRequiredParam(LeaderDataError):
     """Не указан обязательный для операции параметр"""
 
     operation_id: str
@@ -52,7 +56,7 @@ class MissingRequiredParam(Exception):
         self.name = name
 
 
-class OperationNotFoundError(Exception):
+class OperationNotFoundError(LeaderDataError):
     """Операция не найдена в спецификации API"""
 
     operation_id: str
