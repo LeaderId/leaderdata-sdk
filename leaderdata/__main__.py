@@ -23,7 +23,7 @@ def update(args: argparse.ArgumentParser):
         fh.write(response.text)
 
     data = json.loads(response.text)
-    sys.stdout.write(f'openapi.json updated to {data["info"]["version"]}')
+    sys.stdout.write(f'openapi.json updated to {data["info"]["version"]}\n')
 
 
 def main():
