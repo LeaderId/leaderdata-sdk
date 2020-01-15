@@ -1,7 +1,9 @@
 import json
 import logging
+from datetime import datetime
 from functools import partial
 from typing import Any, Optional, Tuple
+from uuid import UUID
 
 import httpx
 from leaderdata.conf import DSN, OPENAPI_PATH, ensure_openapi_exists
@@ -12,6 +14,7 @@ from leaderdata.exceptions import (
     OperationNotFoundError,
 )
 
+EMPTY = {}
 logger = logging.getLogger(__name__)
 
 
@@ -20,6 +23,7 @@ class Spec:
 
     _spec: dict = None
     _paths: dict = None
+    _components: dict = None
 
     @classmethod
     def ensure_spec_loaded(cls):
@@ -40,6 +44,22 @@ class Spec:
                 cls._paths[spec['operationId']] = (path, method, spec)
 
     @classmethod
+    def _init_components(cls):
+        """Инициализация маппинга компонентов"""
+        cls._components = dict()
+        for key, schema in cls._spec['components']['schemas'].items():
+            cls._components[f'#/components/schemas/{key}'] = schema
+
+    @classmethod
+    def get_component(cls, component_id: str) -> Optional[dict]:
+        """Чтение спецификации компонента"""
+        if cls._components is None:
+            cls._init_components()
+
+        # TODO: в идеале динамическое создание модели Pydantic с кэшированием в классе
+        return cls._components[component_id]
+
+    @classmethod
     def get_operation(cls, operation_id: str) -> Tuple[str, str, dict]:
         """Чтение HTTP метода и спецификации операции"""
         if cls._paths is None:
@@ -49,6 +69,57 @@ class Spec:
             raise OperationNotFoundError(operation_id)
 
         return cls._paths[operation_id]
+
+
+def _post_process_json(data: Any, schema: dict) -> Any:
+    """Рекурсивная пост-обработка данных полученных из JSON"""
+    if data is None:
+        return
+
+    if 'anyOf' in schema:
+        for fmt in schema.get('anyOf', []):
+            try:
+                return _post_process_json(data, fmt)
+            except (TypeError, ValueError):
+                pass
+        raise ValueError(f'Not anyOf {schema["anyOf"]} return value')
+
+    if 'allOf' in schema:
+        for fmt in schema.get('allOf', []):
+            data = _post_process_json(data, fmt)
+
+    if 'type' in schema:
+        if schema['type'] == 'array':
+            for idx, item in enumerate(data):
+                data[idx] = _post_process_json(item, schema['items'])
+
+        elif schema['type'] == 'string':
+            if 'format' in schema:
+                if schema['format'] in ('uuid', 'uuid4'):
+                    return UUID(data)
+                elif schema['format'] == 'date-time':
+                    return datetime.fromisoformat(data)
+
+        elif schema['type'] == 'object':
+            for key, value in data.items():
+                data[key] = _post_process_json(value, schema['properties'][key])
+
+    if '$ref' in schema:
+        return _post_process_json(data, Spec.get_component(schema['$ref']))
+    return data
+
+
+def _post_process_response(method: str, spec: dict, response: httpx.Response) -> Any:
+    """
+    Пост-обработка ответа API с конвертацией данных в типы Python отсутствующие в JSON
+    """
+    schema = spec.get('responses', EMPTY).get(str(response.status_code))
+    if schema and 'content' in schema:
+        content_type = response.headers.get('content-type')
+        schema = schema.get('content', EMPTY).get(content_type, EMPTY).get('schema')
+        if schema:
+            return _post_process_json(response.json(), schema)
+    return response.json()
 
 
 class Client:
@@ -140,4 +211,4 @@ class Client:
         if is_auth:
             self.token = response.json().get('access_token')
 
-        return response.json()
+        return _post_process_response(method=method, spec=spec, response=response)
