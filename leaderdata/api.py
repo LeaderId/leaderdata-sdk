@@ -68,7 +68,7 @@ class Client:
         if not name.startswith('_'):
             path, method, spec = Spec.get_operation(name)
             return partial(self._request, name, path, method, spec)
-        return super().__getattr__(name)
+        raise AttributeError(f'{self.__class__.__name__} instance has no attribute \'{name}\'')
 
     def _request(
         self,
