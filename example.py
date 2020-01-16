@@ -23,7 +23,7 @@ def main():
     if collection:
         # При наличии хотя бы одной чтение её отдельно
         read_collection = client.collections__read_collection(
-            collection_id=collection['id']
+            collection_id=collection.id
         )
         pprint(read_collection)
         breakpoint()

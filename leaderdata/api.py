@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from functools import partial
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Type
 from uuid import UUID
 
 import httpx
@@ -18,11 +18,28 @@ EMPTY = {}
 logger = logging.getLogger(__name__)
 
 
+class GenericModel:
+    """Базовый класс для создания моделей"""
+
+    _required_fields: List[str]
+
+    def __repr__(self):
+        params = ' '.join(
+            [
+                f'{key}={str(getattr(self, key))}'
+                for key in self._required_fields
+                if getattr(self, key) is not None
+            ]
+        )
+        return ''.join(['<', str(type(self)), (f' {params}' if params else ''), '>'])
+
+
 class Spec:
     """Интерфейс для работы со спецификацией API"""
 
     _spec: dict = None
     _paths: dict = None
+    _models: dict = dict()
     _components: dict = None
 
     @classmethod
@@ -48,16 +65,32 @@ class Spec:
         """Инициализация маппинга компонентов"""
         cls._components = dict()
         for key, schema in cls._spec['components']['schemas'].items():
+            schema['_original_title'] = key
             cls._components[f'#/components/schemas/{key}'] = schema
 
     @classmethod
-    def get_component(cls, component_id: str) -> Optional[dict]:
+    def _init_model(cls, schema: dict, component_id: str) -> Type[GenericModel]:
+        """Генерация модели для компонента"""
+        required = schema.get('required', [])
+        attrs = {key: None for key in required}
+        attrs['_required_fields'] = required
+        model = type(schema['_original_title'], (GenericModel,), attrs,)
+        cls._models[component_id] = model
+        return model
+
+    @classmethod
+    def get_component(
+        cls, component_id: str
+    ) -> Optional[Tuple[dict, Type[GenericModel]]]:
         """Чтение спецификации компонента"""
         if cls._components is None:
             cls._init_components()
 
-        # TODO: в идеале динамическое создание модели Pydantic с кэшированием в классе
-        return cls._components[component_id]
+        component = cls._components[component_id]
+        if component_id not in cls._models:
+            cls._init_model(component, component_id)
+
+        return (component, cls._models[component_id])
 
     @classmethod
     def get_operation(cls, operation_id: str) -> Tuple[str, str, dict]:
@@ -71,7 +104,9 @@ class Spec:
         return cls._paths[operation_id]
 
 
-def _post_process_json(data: Any, schema: dict) -> Any:
+def _post_process_json(
+    data: Any, schema: dict, model: Optional[Type[GenericModel]] = None
+) -> Any:
     """Рекурсивная пост-обработка данных полученных из JSON"""
     if data is None:
         return
@@ -101,11 +136,24 @@ def _post_process_json(data: Any, schema: dict) -> Any:
                     return datetime.fromisoformat(data)
 
         elif schema['type'] == 'object':
+            if model:
+                instance = model()
+
             for key, value in data.items():
-                data[key] = _post_process_json(value, schema['properties'][key])
+                if model:
+                    setattr(
+                        instance,
+                        key,
+                        _post_process_json(value, schema['properties'][key]),
+                    )
+                else:
+                    data[key] = _post_process_json(value, schema['properties'][key])
+
+            if model:
+                return instance
 
     if '$ref' in schema:
-        return _post_process_json(data, Spec.get_component(schema['$ref']))
+        return _post_process_json(data, *Spec.get_component(schema['$ref']))
     return data
 
 
@@ -139,7 +187,9 @@ class Client:
         if not name.startswith('_'):
             path, method, spec = Spec.get_operation(name)
             return partial(self._request, name, path, method, spec)
-        raise AttributeError(f'{self.__class__.__name__} instance has no attribute \'{name}\'')
+        raise AttributeError(
+            f'{self.__class__.__name__} instance has no attribute \'{name}\''
+        )
 
     def _request(
         self,

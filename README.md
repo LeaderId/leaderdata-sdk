@@ -64,7 +64,7 @@ client = Client(client_id='APP_ID', client_secret='APP_SECRET')
 
 ```python
 for collection in client.collections__list_collections(is_own=True):
-    print(f'collection id: {collection["id"]}, name: {collection["name"]}')
+    print(f'collection id: {collection.id}, name: {collection.name}')
 ```
 
 Создание новой коллекции:
@@ -76,15 +76,15 @@ collection = client.collections__create_collection({
   'description': 'From SDK README.md'
 })
 
-print(f'new collection id: {collection["id"]}')
+print(f'new collection id: {collection.id}')
 ```
 
 Чтение созданной только что коллекции:
 
 ```python
 actual_collection_data = client.collections__read_collection(
-  collection_id=collection["id"]
+  collection_id=collection.id
 )
 
-print(f'collection current name: {actual_collection_data["name"]}')
+print(f'collection current name: {actual_collection_data.name}')
 ```
