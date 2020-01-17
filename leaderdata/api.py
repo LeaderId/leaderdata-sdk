@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from functools import partial
-from typing import Any, List, Optional, Tuple, Type
+from typing import Any, List, Optional, Tuple, Type, Union
 from uuid import UUID
 
 import httpx
@@ -199,14 +199,15 @@ class Client:
         spec: dict,
         body: Any = None,
         *,
-        is_auth: bool = False,
-        try_auth: bool = True,
+        _is_auth: bool = False,
+        _try_auth: bool = True,
+        _timeout: Optional[Union[httpx.Timeout, int]] = None,
         **kwargs,
     ):
         """Запрос в API LeaderData"""
         margs = {}
 
-        if body:
+        if body is not None:
             margs['json'] = body
 
         if self.token:
@@ -224,16 +225,19 @@ class Client:
             elif param['required'] is True:
                 raise MissingRequiredParam(name, operation_id)
 
+        if _timeout is not None:
+            margs['timeout'] = _timeout
+
         response: httpx.Response = getattr(httpx, method)(f'{DSN}{path}', **margs)
 
         if 400 <= response.status_code < 500:
-            if response.status_code == 403 and try_auth:
+            if response.status_code == 403 and _try_auth:
                 # Попытка авторизации
                 logger.debug('Not authenticated error, try auth..')
                 try:
                     self.auth__application_authentication(
-                        is_auth=True,
-                        try_auth=False,
+                        _is_auth=True,
+                        _try_auth=False,
                         client_id=self.client_id,
                         client_secret=self.client_secret,
                     )
@@ -250,7 +254,7 @@ class Client:
                         method=method,
                         spec=spec,
                         body=body,
-                        try_auth=False,
+                        _try_auth=False,
                         **kwargs,
                     )
             raise BadRequestError(response=response)
@@ -258,7 +262,7 @@ class Client:
         elif response.status_code >= 500:
             raise APIServerError(response=response)
 
-        if is_auth:
+        if _is_auth:
             self.token = response.json().get('access_token')
 
         return _post_process_response(method=method, spec=spec, response=response)
