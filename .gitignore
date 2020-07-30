@@ -1,3 +1,5 @@
 /leaderdata/openapi.json
 /poetry.lock
 /.env
+/build
+/dist
